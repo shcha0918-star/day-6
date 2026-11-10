@@ -1,21 +1,13 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <!-- Google Analytics 4 (gtag.js) -->
-  <script>
-    window.GA4_MEASUREMENT_ID = 'G-W425JTRPHK';
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){ dataLayer.push(arguments); }
-    if (/^G-[A-Z0-9]{6,}$/.test(GA4_MEASUREMENT_ID)) {
-      var gs = document.createElement('script');
-      gs.async = true;
-      gs.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA4_MEASUREMENT_ID;
-      document.head.appendChild(gs);
-      gtag('js', new Date());
-      gtag('config', GA4_MEASUREMENT_ID);
-    }
-  </script>
-  <!-- End Google Analytics 4 -->
+  <!-- Google Tag Manager -->
+  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+  })(window,document,'script','dataLayer','GTM-MT9GC4XP');</script>
+  <!-- End Google Tag Manager -->
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AGM마켓 | 신선식품 전문 온라인몰</title>
@@ -436,6 +428,10 @@
   </style>
 </head>
 <body>
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-MT9GC4XP"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
 
 <!-- ══ HEADER ══ -->
 <header id="site-header">
@@ -1005,11 +1001,16 @@ const FALLBACK_IMG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
   '<text x="250" y="290" font-family="sans-serif" font-size="20" fill="#8aa294" text-anchor="middle">마켓</text></svg>');
 
 // ────────────────────────────────
-// 이벤트 추적 (GA4 텍소노미 기준 · gtag.js 직접 전송)
+// 이벤트 추적 (GA4 텍소노미 기준 · GTM dataLayer 전송)
 //   promotion_click / item_view / item_click / add_to_cart / purchase
 // ────────────────────────────────
 function track(eventName, params) {
-  gtag('event', eventName, params);   // GA4로 직접 전송 (측정 ID 미설정 시 dataLayer에만 쌓임)
+  window.dataLayer = window.dataLayer || [];
+  window.dataLayer.push(Object.assign({ event: eventName }, params));   // GTM 맞춤 이벤트 트리거가 수집
+}
+// 상품 공통 파라미터 (item_id / item_name / item_category)
+function itemParams(product) {
+  return { item_id: product.id, item_name: product.name, item_category: product.category };
 }
 
 // 메인 화면 영역(section) 이름
@@ -1053,7 +1054,20 @@ document.addEventListener('click', e => {
     track('promotion_click', { promotion_name: '시원 할인 프로모션' });
     return;
   }
-  if (e.target.closest('.btn-wishlist, .btn-add-to-cart')) return;
+  // #10 add_to_cart — 상품 카드의 "+ 장바구니 담기" 클릭
+  const cartBtn = e.target.closest('.btn-add-to-cart');
+  if (cartBtn) {
+    const product = PRODUCTS.find(p => p.id === cartBtn.dataset.productId);
+    if (product) {
+      const card = cartBtn.closest('.product-card');
+      track('add_to_cart', Object.assign(itemParams(product), {
+        section: (card && trackSectionOf(card)) || (cartBtn.closest('#wishlist-grid') ? '위시리스트' : '기타'),
+        value: product.price, currency: 'KRW'
+      }));
+    }
+    return;
+  }
+  if (e.target.closest('.btn-wishlist')) return;
   const card = e.target.closest(TRACK_ITEM_SELECTOR);
   if (!card) return;
   const section = trackSectionOf(card);
@@ -1224,6 +1238,16 @@ function toggleWishlist(productId, event) {
   } else {
     wishlist.push(productId);
     showToast('♥ 찜 목록에 추가했습니다');
+    // #11 add_to_wishlist — 찜하는 순간만 (해제는 제외)
+    if (p) {
+      const src = event && event.target;
+      const card = src && src.closest ? src.closest('.product-card') : null;
+      track('add_to_wishlist', Object.assign(itemParams(p), {
+        section: (src && src.closest && src.closest('#btn-wishlist-detail')) ? '상품상세'
+               : ((card && trackSectionOf(card)) || '위시리스트'),
+        value: p.price, currency: 'KRW'
+      }));
+    }
   }
   saveWishlist();
   updateWishlistCount();
@@ -1917,12 +1941,14 @@ function detailTrackParams(productId) {
   const product = PRODUCTS.find(p => p.id === productId);
   if (!product) return null;
   const v = getVariant(product, selectedVariantId);
-  return { item_name: product.name, item_option: v.label, value: v.price * detailQty, currency: 'KRW' };
+  return Object.assign(itemParams(product), {
+    item_option: v.label, section: '상품상세', value: v.price * detailQty, currency: 'KRW'
+  });
 }
 
 function buyNow(productId) {
   const tp = detailTrackParams(productId);
-  if (tp) track('purchase', tp);   // #5 purchase — 구매 버튼 클릭
+  if (tp) track('begin_checkout', tp);   // #5 begin_checkout — 바로 구매하기 클릭 (결제 시작)
   addToCart(productId, detailQty, true, selectedVariantId);
   goCheckout();
 }
@@ -2271,6 +2297,17 @@ function placeOrder() {
     delivery:  selectedDelivery,
     recipient: recipientName,
   };
+
+  // #12 purchase — 결제 완료 시 1회 (장바구니 비우기 전에 상품 목록 수집)
+  const purchaseItems = cart.map(cartLine).filter(Boolean).map(l => Object.assign(itemParams(l.product), {
+    item_variant: l.variant.label, price: l.variant.price, quantity: l.qty
+  }));
+  window.dataLayer = window.dataLayer || [];
+  window.dataLayer.push({ ecommerce: null });   // 이전 ecommerce 값 초기화
+  track('purchase', {
+    transaction_id: lastOrder.orderId, value: lastOrder.total, currency: 'KRW', items: purchaseItems,
+    ecommerce: { transaction_id: lastOrder.orderId, value: lastOrder.total, currency: 'KRW', items: purchaseItems }
+  });
 
   cart = [];
   appliedCoupon = null;
