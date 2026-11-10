@@ -1,13 +1,21 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <!-- Google Tag Manager -->
-  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-  })(window,document,'script','dataLayer','GTM-MT9GC4XP');</script>
-  <!-- End Google Tag Manager -->
+  <!-- Google Analytics 4 (gtag.js) -->
+  <script>
+    window.GA4_MEASUREMENT_ID = 'G-W425JTRPHK';
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ dataLayer.push(arguments); }
+    if (/^G-[A-Z0-9]{6,}$/.test(GA4_MEASUREMENT_ID)) {
+      var gs = document.createElement('script');
+      gs.async = true;
+      gs.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA4_MEASUREMENT_ID;
+      document.head.appendChild(gs);
+      gtag('js', new Date());
+      gtag('config', GA4_MEASUREMENT_ID);
+    }
+  </script>
+  <!-- End Google Analytics 4 -->
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AGM마켓 | 신선식품 전문 온라인몰</title>
@@ -428,10 +436,6 @@
   </style>
 </head>
 <body>
-<!-- Google Tag Manager (noscript) -->
-<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-MT9GC4XP"
-height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
-<!-- End Google Tag Manager (noscript) -->
 
 <!-- ══ HEADER ══ -->
 <header id="site-header">
@@ -1001,12 +1005,11 @@ const FALLBACK_IMG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
   '<text x="250" y="290" font-family="sans-serif" font-size="20" fill="#8aa294" text-anchor="middle">마켓</text></svg>');
 
 // ────────────────────────────────
-// 이벤트 추적 (GA4 텍소노미 기준 · GTM dataLayer)
+// 이벤트 추적 (GA4 텍소노미 기준 · gtag.js 직접 전송)
 //   promotion_click / item_view / item_click / add_to_cart / purchase
 // ────────────────────────────────
 function track(eventName, params) {
-  window.dataLayer = window.dataLayer || [];
-  window.dataLayer.push(Object.assign({ event: eventName }, params));
+  gtag('event', eventName, params);   // GA4로 직접 전송 (측정 ID 미설정 시 dataLayer에만 쌓임)
 }
 
 // 메인 화면 영역(section) 이름
@@ -1017,14 +1020,35 @@ const TRACK_SECTIONS = [
   ['#product-grid',      '상품목록']
 ];
 function trackSectionOf(el) {
-  for (const [sel, name] of TRACK_SECTIONS) if (el.closest(sel)) return name;
+  for (const [sel, name] of TRACK_SECTIONS) {
+    if (!el.closest(sel)) continue;
+    if (sel === '#product-grid' && el.classList.contains('search-result-item')) return '검색결과';
+    return name;
+  }
   return null;
 }
 const TRACK_ITEM_SELECTOR = '.deal-card, .best-card, .product-card';
 
 // #1 promotion_click — 시원 할인 프로모션 배너 클릭
 // #3 item_click — 메인 제품 클릭 (찜/장바구니 버튼 제외)
+// 신규가입 쿠폰 배너 공통 파라미터 (promotion_click / promotion_view)
+function signupPromoParams() {
+  return {
+    promotion_name: '신규가입 5000원 쿠폰',
+    promotion_id: 'signup-coupon',
+    creative_slot: 'home_middle',
+    login_status: currentUser ? 'logged_in' : 'guest'
+  };
+}
+let signupSource = 'direct';   // sign_up 유입 경로: 쿠폰 배너(signup-coupon) / 그 외(direct)
+
 document.addEventListener('click', e => {
+  if (e.target.closest('#promo-signup-coupon')) {
+    track('promotion_click', signupPromoParams());
+    signupSource = 'signup-coupon';
+    return;
+  }
+  if (e.target.closest('#btn-signup, #btn-switch-to-signup')) signupSource = 'direct';
   if (e.target.closest('#event-banner-summer')) {
     track('promotion_click', { promotion_name: '시원 할인 프로모션' });
     return;
@@ -1058,6 +1082,16 @@ if ('IntersectionObserver' in window) {
       });
     });
   };
+  // promotion_view — 신규가입 쿠폰 배너가 50% 이상 노출될 때 (페이지 로드당 1회)
+  const promoEl = document.getElementById('promo-signup-coupon');
+  if (promoEl) {
+    const promoObserver = new IntersectionObserver(entries => {
+      if (!entries.some(en => en.isIntersecting)) return;
+      promoObserver.disconnect();
+      track('promotion_view', signupPromoParams());
+    }, { threshold: 0.5 });
+    promoObserver.observe(promoEl);
+  }
   let scanTimer = null;
   new MutationObserver(() => { clearTimeout(scanTimer); scanTimer = setTimeout(scanItems, 100); })
     .observe(document.body, { childList: true, subtree: true });
@@ -1125,6 +1159,8 @@ function doSignup(e) {
   const email = document.getElementById('signup-email').value.trim();
   currentUser = { name: name || '회원', email, provider: 'email',
                   marketingAgreed: document.getElementById('signup-agree-marketing').checked };
+  track('sign_up', { method: 'email', signup_source: signupSource });   // 개인정보(이메일·이름)는 전송하지 않음
+  signupSource = 'direct';
   saveUser(); renderAuthState(); closeModals();
   showToast('🎁 가입 완료! 5,000원 쿠폰(WELCOME5000)이 지급되었습니다');
 }
@@ -1881,7 +1917,7 @@ function detailTrackParams(productId) {
   const product = PRODUCTS.find(p => p.id === productId);
   if (!product) return null;
   const v = getVariant(product, selectedVariantId);
-  return { item_name: product.name, item_option: v.label, value: v.price * detailQty };
+  return { item_name: product.name, item_option: v.label, value: v.price * detailQty, currency: 'KRW' };
 }
 
 function buyNow(productId) {
@@ -2287,6 +2323,12 @@ function doSearch(event) {
   if (event) event.preventDefault();
   const query = document.getElementById('search-input').value.trim();
   if (!query) { navigate('/'); return; }
+  // #9 search — 검색 실행 시 (검색어는 공백 정리·소문자 통일)
+  track('search', {
+    search_term: query.replace(/\s+/g, ' ').toLowerCase(),
+    result_count: searchProducts(query).length,
+    login_status: currentUser ? 'logged_in' : 'guest'
+  });
   pendingScrollTo = 'section-all-products';
   navigate('/search/' + encodeURIComponent(query));
 }
